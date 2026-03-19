@@ -2,59 +2,99 @@ package com.chad.sales.service;
 
 import java.util.List;
 
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import com.chad.sales.dto.ClienteRequestDTO;
+import com.chad.sales.dto.ClienteResponseDTO;
 import com.chad.sales.exception.ClienteNotFoundException;
 import com.chad.sales.exception.UsuarioNotFoundException;
 import com.chad.sales.model.Cliente;
 import com.chad.sales.model.Usuario;
 import com.chad.sales.repository.ClienteRepository;
 import com.chad.sales.repository.UsuarioRepository;
+import com.chad.sales.config.AuthUtil;
 
 @Service
 public class ClienteService {
 
     private final ClienteRepository clienteRepository;
     private final UsuarioRepository usuarioRepository;
+    private final AuthUtil authUtil;
+    private final UsuarioAutenticadoService usuarioAutenticadoService;
 
-    public ClienteService(ClienteRepository clienteRepository, UsuarioRepository usuarioRepository) {
+    public ClienteService(ClienteRepository clienteRepository,
+                          UsuarioRepository usuarioRepository,
+                          AuthUtil authUtil,
+                          UsuarioAutenticadoService usuarioAutenticadoService) {
         this.clienteRepository = clienteRepository;
         this.usuarioRepository = usuarioRepository;
+        this.authUtil = authUtil;
+        this.usuarioAutenticadoService = usuarioAutenticadoService;
     }
 
-    // Salvar cliente atribuindo ao usuário logado
-    public Cliente salvar(Cliente cliente) {
-        Usuario usuario = getUsuarioLogado();
+    public ClienteResponseDTO salvar(ClienteRequestDTO dto) {
+
+    	Usuario usuario = usuarioAutenticadoService.get();
+
+        Cliente cliente = new Cliente();
+        cliente.setNome(dto.getNome());
+        cliente.setTelefone(dto.getTelefone());
         cliente.setUsuario(usuario);
-        return clienteRepository.save(cliente);
+
+        Cliente salvo = clienteRepository.save(cliente);
+
+        return toDTO(salvo);
     }
 
-    // Listar todos os clientes do usuário logado
-    public List<Cliente> listarTodos() {
-        Usuario usuario = getUsuarioLogado();
-        return clienteRepository.findByUsuarioId(usuario.getId());
+    public List<ClienteResponseDTO> listarTodos() {
+
+    	Usuario usuario = usuarioAutenticadoService.get();
+
+        return clienteRepository.findByUsuarioId(usuario.getId())
+                .stream()
+                .map(this::toDTO)
+                .toList();
     }
 
-    // Buscar cliente por ID garantindo que pertence ao usuário logado
-    public Cliente buscarPorId(Long id) {
-        Usuario usuario = getUsuarioLogado();
+    public ClienteResponseDTO buscarPorId(Long id) {
+        Cliente cliente = buscarPorIdEntity(id);
+        return toDTO(cliente);
+    }
+
+    public Cliente buscarPorIdEntity(Long id) {
+
+    	Usuario usuario = usuarioAutenticadoService.get();
+
         return clienteRepository.findByIdAndUsuarioId(id, usuario.getId())
-                .orElseThrow(() -> new ClienteNotFoundException("Cliente com ID " + id + " não encontrado"));
+                .orElseThrow(() ->
+                    new ClienteNotFoundException("Cliente com ID " + id + " não encontrado"));
     }
 
-    // Deletar cliente garantindo permissão
     public void deletar(Long id) {
-        Cliente cliente = buscarPorId(id);
+        Cliente cliente = buscarPorIdEntity(id);
         clienteRepository.delete(cliente);
     }
 
-    // Helper para pegar o usuário logado
-    private Usuario getUsuarioLogado() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        String email = (principal instanceof UserDetails) ? ((UserDetails) principal).getUsername() : principal.toString();
-        return usuarioRepository.findByEmail(email)
-                .orElseThrow(() -> new UsuarioNotFoundException("Usuário logado não encontrado"));
+    private ClienteResponseDTO toDTO(Cliente cliente) {
+        return new ClienteResponseDTO(
+            cliente.getId(),
+            cliente.getNome(),
+            cliente.getTelefone()
+        );
+    }
+    public ClienteResponseDTO atualizar(Long id, ClienteRequestDTO dto) {
+
+        Usuario usuario = usuarioAutenticadoService.get();
+
+        Cliente cliente = clienteRepository
+                .findByIdAndUsuarioId(id, usuario.getId())
+                .orElseThrow(() -> new ClienteNotFoundException("Cliente não encontrado"));
+
+        cliente.setNome(dto.getNome());
+        cliente.setTelefone(dto.getTelefone());
+
+        clienteRepository.save(cliente);
+
+        return new ClienteResponseDTO(cliente);
     }
 }

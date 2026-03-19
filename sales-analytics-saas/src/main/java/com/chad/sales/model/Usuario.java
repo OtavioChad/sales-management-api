@@ -1,5 +1,7 @@
 package com.chad.sales.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.*;
 
 @Entity
@@ -14,7 +16,7 @@ public class Usuario {
     
     @Column(unique = true)
     private String email;
-
+    @JsonIgnore
     private String senha;
 
     // Getters e Setters

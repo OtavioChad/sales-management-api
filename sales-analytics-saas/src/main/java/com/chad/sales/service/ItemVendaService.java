@@ -2,16 +2,19 @@ package com.chad.sales.service;
 
 import java.util.List;
 
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 
+import com.chad.sales.config.AuthUtil;
+import com.chad.sales.dto.ItemVendaRequestDTO;
+import com.chad.sales.dto.ItemVendaResponseDTO;
 import com.chad.sales.exception.ProdutoNotFoundException;
 import com.chad.sales.exception.UsuarioNotFoundException;
 import com.chad.sales.model.ItemVenda;
-import com.chad.sales.model.Venda;
+import com.chad.sales.model.Produto;
 import com.chad.sales.model.Usuario;
+import com.chad.sales.model.Venda;
 import com.chad.sales.repository.ItemVendaRepository;
+import com.chad.sales.repository.ProdutoRepository;
 import com.chad.sales.repository.UsuarioRepository;
 import com.chad.sales.repository.VendaRepository;
 
@@ -21,56 +24,80 @@ public class ItemVendaService {
     private final ItemVendaRepository itemVendaRepository;
     private final VendaRepository vendaRepository;
     private final UsuarioRepository usuarioRepository;
+    private final ProdutoRepository produtoRepository;
+    private final AuthUtil authUtil;
+    private final UsuarioAutenticadoService usuarioAutenticadoService;
 
-    public ItemVendaService(ItemVendaRepository itemVendaRepository, 
+    public ItemVendaService(ItemVendaRepository itemVendaRepository,
                             VendaRepository vendaRepository,
-                            UsuarioRepository usuarioRepository) {
+                            UsuarioRepository usuarioRepository,
+                            ProdutoRepository produtoRepository,
+                            AuthUtil authUtil,
+                            UsuarioAutenticadoService usuarioAutenticadoService) {
+
         this.itemVendaRepository = itemVendaRepository;
         this.vendaRepository = vendaRepository;
         this.usuarioRepository = usuarioRepository;
+        this.produtoRepository = produtoRepository;
+        this.authUtil = authUtil;
+        this.usuarioAutenticadoService = usuarioAutenticadoService;
     }
 
-    // Salvar item garantindo que a venda pertence ao usuário logado
-    public ItemVenda salvar(ItemVenda itemVenda) {
-        Usuario usuario = getUsuarioLogado();
+    // SALVAR COM DTO
+    public ItemVendaResponseDTO salvar(Long vendaId, ItemVendaRequestDTO dto) {
 
-        Venda venda = vendaRepository.findById(itemVenda.getVenda().getId())
+    	Usuario usuario = usuarioAutenticadoService.get();
+
+        Venda venda = vendaRepository.findById(vendaId)
                 .orElseThrow(() -> new ProdutoNotFoundException("Venda não encontrada"));
 
         if (!venda.getUsuario().getId().equals(usuario.getId())) {
-            throw new ProdutoNotFoundException("Você não tem permissão para adicionar itens a esta venda");
+            throw new ProdutoNotFoundException("Sem permissão para essa venda");
         }
+        
+        Produto produto = produtoRepository
+                .findByIdAndUsuarioId(dto.getProdutoId(), usuario.getId())
+                .orElseThrow(() -> new ProdutoNotFoundException("Produto não encontrado"));
 
-        itemVenda.setVenda(venda);
-        return itemVendaRepository.save(itemVenda);
+        ItemVenda item = new ItemVenda();
+        item.setVenda(venda);
+        item.setProduto(produto);
+        item.setQuantidade(dto.getQuantidade());
+        item.setPreco(produto.getPrecoVenda());
+
+        ItemVenda salvo = itemVendaRepository.save(item);
+
+        return new ItemVendaResponseDTO(salvo);
     }
 
-    // Listar todos os itens de venda do usuário logado
-    public List<ItemVenda> listarTodos() {
-        Usuario usuario = getUsuarioLogado();
-        return itemVendaRepository.findByVendaUsuarioId(usuario.getId());
+    // LISTAR
+    public List<ItemVendaResponseDTO> listarTodos() {
+    	Usuario usuario = usuarioAutenticadoService.get();
+
+        return itemVendaRepository.findByVendaUsuarioId(usuario.getId())
+                .stream()
+                .map(ItemVendaResponseDTO::new)
+                .toList();
     }
 
-    // Buscar item por ID garantindo que pertence ao usuário
-    public ItemVenda buscarPorId(Long id) {
-        Usuario usuario = getUsuarioLogado();
-        return itemVendaRepository.findByIdAndVendaUsuarioId(id, usuario.getId())
-                .orElseThrow(() -> new ProdutoNotFoundException("Item de venda não encontrado"));
+    // BUSCAR POR ID
+    public ItemVendaResponseDTO buscarPorId(Long id) {
+    	Usuario usuario = usuarioAutenticadoService.get();
+
+        ItemVenda item = itemVendaRepository
+                .findByIdAndVendaUsuarioId(id, usuario.getId())
+                .orElseThrow(() -> new ProdutoNotFoundException("Item não encontrado"));
+
+        return new ItemVendaResponseDTO(item);
     }
 
-    // Deletar item garantindo permissão
+    // DELETAR
     public void deletar(Long id) {
-        ItemVenda item = buscarPorId(id);
-        itemVendaRepository.delete(item);
-    }
+    	Usuario usuario = usuarioAutenticadoService.get();
+        ItemVenda item = itemVendaRepository
+                .findByIdAndVendaUsuarioId(id, usuario.getId())
+                .orElseThrow(() -> new ProdutoNotFoundException("Item não encontrado"));
 
-    // Helper para pegar usuário logado
-    private Usuario getUsuarioLogado() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        String email = (principal instanceof UserDetails) 
-                ? ((UserDetails) principal).getUsername() 
-                : principal.toString();
-        return usuarioRepository.findByEmail(email)
-                .orElseThrow(() -> new UsuarioNotFoundException("Usuário logado não encontrado"));
+        itemVendaRepository.delete(item);
     }
 }

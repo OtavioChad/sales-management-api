@@ -33,22 +33,39 @@ public class JwtFilter extends OncePerRequestFilter {
 
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);
+
             try {
                 String email = jwtService.validarToken(token);
 
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
                 UsernamePasswordAuthenticationToken auth =
-                        new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
+                        new UsernamePasswordAuthenticationToken(
+                                userDetails,
+                                null,
+                                userDetails.getAuthorities()
+                        );
 
                 SecurityContextHolder.getContext().setAuthentication(auth);
 
             } catch (Exception e) {
-                System.out.println("Token inválido");
+               
+                response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                response.setContentType("application/json");
+
+                response.getWriter().write("""
+                    {
+                      "status": 401,
+                      "error": "Unauthorized",
+                      "message": "Token inválido ou expirado"
+                    }
+                """);
+
+                return; 
             }
         }
 
         filterChain.doFilter(request, response);
-    }    
+    }
  
 }

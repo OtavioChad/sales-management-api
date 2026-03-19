@@ -4,8 +4,11 @@ import java.util.List;
 
 import org.springframework.web.bind.annotation.*;
 
-import com.chad.sales.model.Cliente;
+import com.chad.sales.dto.ClienteRequestDTO;
+import com.chad.sales.dto.ClienteResponseDTO;
 import com.chad.sales.service.ClienteService;
+
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/clientes")
@@ -17,27 +20,36 @@ public class ClienteController {
         this.clienteService = clienteService;
     }
 
-    // Criar novo cliente
+    // Criar cliente
     @PostMapping
-    public Cliente criarCliente(@RequestBody Cliente cliente) {
-        return clienteService.salvar(cliente);
+    public ClienteResponseDTO criarCliente(@RequestBody @Valid ClienteRequestDTO dto) {
+        return clienteService.salvar(dto);
     }
 
-    // Listar todos os clientes do usuário logado
+    // Listar clientes
     @GetMapping
-    public List<Cliente> listarClientes() {
+    public List<ClienteResponseDTO> listarClientes() {
         return clienteService.listarTodos();
     }
 
-    // Buscar cliente por ID
+    // Buscar por ID
     @GetMapping("/{id}")
-    public Cliente buscarCliente(@PathVariable Long id) {
+    public ClienteResponseDTO buscarCliente(@PathVariable Long id) {
         return clienteService.buscarPorId(id);
     }
 
-    // Deletar cliente
+    // Deletar
     @DeleteMapping("/{id}")
     public void deletarCliente(@PathVariable Long id) {
         clienteService.deletar(id);
+    }
+    
+    @PutMapping("/{id}")
+    public ClienteResponseDTO atualizarCliente(
+    		@Valid
+            @PathVariable Long id,
+            @RequestBody @Valid ClienteRequestDTO dto) {
+
+        return clienteService.atualizar(id, dto);
     }
 }

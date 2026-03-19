@@ -2,6 +2,8 @@ package com.chad.sales.auth;
 
 import org.springframework.web.bind.annotation.*;
 
+import com.chad.sales.dto.UsuarioLogadoDTO;
+import com.chad.sales.dto.UsuarioResponseDTO;
 import com.chad.sales.model.Usuario;
 
 @RestController
@@ -15,10 +17,8 @@ public class AuthController {
     }
 
     @PostMapping("/register")
-    public Usuario register(@RequestBody RegisterRequest request) {
-
-        return authService.registrar(request);
-
+    public UsuarioResponseDTO register(@RequestBody RegisterRequest request) {
+        return new UsuarioResponseDTO(authService.registrar(request));
     }
     
     @PostMapping("/login")
@@ -26,6 +26,11 @@ public class AuthController {
 
         return authService.login(request);
 
+    }
+    
+    @GetMapping("/me")
+    public UsuarioLogadoDTO usuarioLogado() {
+        return authService.getUsuarioLogadoDTO();
     }
 
 }

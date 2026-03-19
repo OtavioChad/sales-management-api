@@ -3,18 +3,15 @@ package com.chad.sales.service;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import com.chad.sales.dto.ItemVendaDTO;
-import com.chad.sales.dto.VendaDTO;
+import com.chad.sales.config.AuthUtil;
+import com.chad.sales.dto.VendaRequestDTO;
 import com.chad.sales.exception.ClienteNotFoundException;
 import com.chad.sales.exception.EstoqueInsuficienteException;
 import com.chad.sales.exception.ProdutoNotFoundException;
 import com.chad.sales.exception.UsuarioNotFoundException;
-import com.chad.sales.exception.VendaNotFoundException;
 import com.chad.sales.model.Cliente;
 import com.chad.sales.model.ItemVenda;
 import com.chad.sales.model.Produto;
@@ -32,116 +29,84 @@ public class VendaService {
     private final UsuarioRepository usuarioRepository;
     private final ClienteRepository clienteRepository;
     private final ProdutoRepository produtoRepository;
-
+    private final UsuarioAutenticadoService usuarioAutenticadoService;
+  
     public VendaService(VendaRepository vendaRepository,
                         UsuarioRepository usuarioRepository,
                         ClienteRepository clienteRepository,
-                        ProdutoRepository produtoRepository) {
+                        ProdutoRepository produtoRepository,
+                        AuthUtil authUtil,
+                        UsuarioAutenticadoService usuarioAutenticadoService) {
+
         this.vendaRepository = vendaRepository;
         this.usuarioRepository = usuarioRepository;
         this.clienteRepository = clienteRepository;
         this.produtoRepository = produtoRepository;
+        this.usuarioAutenticadoService = usuarioAutenticadoService;
+        
     }
 
-    // Salvar venda direta
-    public Venda salvar(Venda venda) {
-        Usuario usuario = getUsuarioLogado();
-        venda.setUsuario(usuario);
-        return vendaRepository.save(venda);
-    }
-
-    // Salvar venda via DTO
     @Transactional
-    public Venda salvarComDTO(VendaDTO dto) {
-        // 1️⃣ Pega o usuário logado
-        Usuario usuario = getUsuarioLogado();
+    public Venda salvar(VendaRequestDTO dto) {
 
-        // 2️⃣ Valida o cliente e garante que pertence ao usuário logado
-        Cliente cliente = clienteRepository.findById(dto.getClienteId())
+    	Usuario usuario = usuarioAutenticadoService.get();
+        Cliente cliente = clienteRepository
+                .findByIdAndUsuarioId(dto.getClienteId(), usuario.getId())
                 .orElseThrow(() -> new ClienteNotFoundException(
-                        "Cliente com ID " + dto.getClienteId() + " não encontrado"));
+                        "Cliente não encontrado"));
 
-        // Se a entidade Cliente tiver vínculo com usuário, valida aqui
-        if (cliente.getUsuario() == null || !cliente.getUsuario().getId().equals(usuario.getId())) {
-            throw new ClienteNotFoundException(
-                    "Cliente " + cliente.getNome() + " não pertence ao usuário logado");
-        }
-
-        // 3️⃣ Cria a venda
         Venda venda = new Venda();
         venda.setUsuario(usuario);
         venda.setCliente(cliente);
         venda.setFormaPagamento(dto.getFormaPagamento());
         venda.setData(LocalDateTime.now());
 
-        // 4️⃣ Valida e adiciona itens da venda
         List<ItemVenda> itens = dto.getItens().stream().map(itemDTO -> {
-            Produto produto = produtoRepository.findById(itemDTO.getProdutoId())
-                    .orElseThrow(() -> new ProdutoNotFoundException(
-                            "Produto com ID " + itemDTO.getProdutoId() + " não encontrado"));
 
-            // Garante que o produto pertence ao usuário logado
-            if (produto.getUsuario() == null || !produto.getUsuario().getId().equals(usuario.getId())) {
-                throw new ProdutoNotFoundException(
-                        "Produto " + produto.getNome() + " não pertence ao usuário logado");
-            }
+            Produto produto = produtoRepository
+                    .findByIdAndUsuarioId(itemDTO.getProdutoId(), usuario.getId())
+                    .orElseThrow(() -> new ProdutoNotFoundException("Produto não encontrado"));
 
-            // Verifica estoque
             if (produto.getEstoque() < itemDTO.getQuantidade()) {
                 throw new EstoqueInsuficienteException(
-                        "Estoque insuficiente para o produto: " + produto.getNome());
+                        "Estoque insuficiente para: " + produto.getNome());
             }
 
-            // Cria o item da venda
             ItemVenda item = new ItemVenda();
             item.setProduto(produto);
             item.setQuantidade(itemDTO.getQuantidade());
             item.setPreco(produto.getPrecoVenda());
             item.setVenda(venda);
 
-            // Atualiza estoque
             produto.setEstoque(produto.getEstoque() - itemDTO.getQuantidade());
-            produtoRepository.save(produto);
 
             return item;
         }).toList();
 
-        // 5️⃣ Finaliza a venda
         venda.setItens(itens);
-        double total = itens.stream().mapToDouble(i -> i.getPreco() * i.getQuantidade()).sum();
+
+        double total = itens.stream()
+                .mapToDouble(i -> i.getPreco() * i.getQuantidade())
+                .sum();
+
         venda.setValorTotal(total);
 
-        // 6️⃣ Salva no banco
         return vendaRepository.save(venda);
     }
-
-    // Listar todas as vendas do usuário logado
-    public List<Venda> listarTodosDoUsuario() {
-        Usuario usuario = getUsuarioLogado();
-        return vendaRepository.findByUsuarioId(usuario.getId());
-    }
-
-    // Buscar venda específica do usuário logado
-    public Venda buscarPorIdDoUsuario(Long id) {
-        Usuario usuario = getUsuarioLogado();
+    
+    public Venda buscarPorId(Long id) {
+    	Usuario usuario = usuarioAutenticadoService.get();
         return vendaRepository.findByIdAndUsuarioId(id, usuario.getId())
-                .orElseThrow(() -> new VendaNotFoundException("Venda com ID " + id + " não encontrada"));
+                .orElseThrow(() -> new RuntimeException("Venda não encontrada"));
     }
-
-    // Deletar venda do usuário logado
+    
     public void deletar(Long id) {
-        Venda venda = buscarPorIdDoUsuario(id);
+        Venda venda = buscarPorId(id);
         vendaRepository.delete(venda);
     }
-
-    // Helper: pega o usuário logado
-    private Usuario getUsuarioLogado() {
-        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        String email = (principal instanceof UserDetails)
-                ? ((UserDetails) principal).getUsername()
-                : principal.toString();
-
-        return usuarioRepository.findByEmail(email)
-                .orElseThrow(() -> new UsuarioNotFoundException("Usuário logado não encontrado"));
+    
+    public List<Venda> listarTodas() {
+    	Usuario usuario = usuarioAutenticadoService.get();
+        return vendaRepository.findByUsuarioId(usuario.getId());
     }
 }

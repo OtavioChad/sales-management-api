@@ -1,8 +1,11 @@
 package com.chad.sales.auth;
 
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import com.chad.sales.dto.UsuarioLogadoDTO;
 import com.chad.sales.model.Usuario;
 import com.chad.sales.repository.UsuarioRepository;
 import com.chad.sales.service.JwtService;
@@ -53,5 +56,25 @@ public class AuthService {
 
         return jwtService.gerarToken(usuario.getEmail());
     }
+    
+    public UsuarioLogadoDTO getUsuarioLogadoDTO() {
+
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+
+        String email = (principal instanceof UserDetails)
+                ? ((UserDetails) principal).getUsername()
+                : principal.toString();
+
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+
+        return new UsuarioLogadoDTO(
+                usuario.getId(),
+                usuario.getNome(),
+                usuario.getEmail()
+        );
+    }
+    
+    
 
 }
